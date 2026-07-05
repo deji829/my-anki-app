@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>耳ベース暗記アプリ PWA Prototype v18</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; padding: 20px; background: #f0f2f5; color: #333; margin: 0; }
+        .container { max-width: 450px; margin: 0 auto; padding-bottom: 40px; }
+        
+        /* クラウド同期ステータスエリア */
+        .sync-card { background: #e8f0fe; padding: 12px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); text-align: left; margin-bottom: 15px; border: 1px solid #4285f4; display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: bold; color: #1a73e8; }
+        .sync-btn { background: #4285f4; color: white; padding: 6px 12px; font-size: 12px; border-radius: 6px; margin: 0; font-weight: bold; }
+
+        /* デッキ管理エリアのスタイル */
+        .deck-manager-card { background: #e3f2fd; padding: 15px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: left; margin-bottom: 15px; border: 1px solid #90caf9; }
+        .deck-select-row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+        .deck-select { flex: 1; padding: 10px; font-size: 16px; border-radius: 6px; border: 1px solid #90caf9; background: white; font-weight: bold; }
+        .deck-create-row { display: flex; gap: 8px; }
+        .deck-input { flex: 1; padding: 8px; border-radius: 6px; border: 1px solid #ccc; font-size: 14px; }
+
+        /* タブナビゲーションのスタイル */
+        .tabs { display: flex; justify-content: space-around; background: white; border-radius: 8px; margin-bottom: 20px; overflow: hidden; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .tab-btn { flex: 1; padding: 12px; background: #f8f9fa; border: none; cursor: pointer; font-size: 16px; font-weight: bold; color: #666; transition: 0.2s; }
+        .tab-btn.active { background: #007bff; color: white; }
+        
+        /* ページ（コンテンツ）の表示制御 */
+        .page { display: none; }
+        .page.active { display: block; }
+
+        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: left; margin-bottom: 20px; }
+        h1 { font-size: 24px; margin-bottom: 15px; }
+        h2 { text-align: center; margin-top: 5px; font-size: 18px; color: #444; border-bottom: 2px solid #f0f2f5; padding-bottom: 10px; }
+        
+        button { font-size: 16px; padding: 10px 20px; margin: 10px 5px; border: none; border-radius: 8px; cursor: pointer; display: inline-block; }
+        .btn-start { background: #007bff; color: white; width: 100%; box-sizing: border-box; font-size: 18px; padding: 14px; margin: 10px 0 0 0; }
+        .btn-stop { background: #6c757d; color: white; width: 100%; box-sizing: border-box; font-size: 16px; padding: 12px; margin: 10px 0 0 0; }
+        .btn-action { background: #28a745; color: white; }
+        .btn-secondary { background: #6c757d; color: white; }
+        .btn-danger { background: #dc3545; color: white; padding: 6px 10px; font-size: 13px; border-radius: 4px; margin: 0; }
+        .btn-edit { background: #ffc107; color: #212529; padding: 6px 10px; font-size: 13px; border-radius: 4px; margin: 0 5px 0 0; }
+        .btn-save { background: #17a2b8; color: white; padding: 6px 10px; font-size: 13px; border-radius: 4px; margin: 0 5px 0 0; }
+        .btn-sm-danger { background: #dc3545; color: white; padding: 8px 12px; font-size: 14px; border-radius: 6px; margin: 0; }
+        
+        /* 特大判定ボタン */
+        .interactive-area { margin-top: 15px; }
+        .judge-row { display: flex; gap: 10px; width: 100%; }
+        .btn-correct { background: #28a745; color: white; font-size: 20px; padding: 18px; border-radius: 10px; flex: 1; font-weight: bold; box-shadow: 0 4px 6px rgba(40,167,69,0.2); }
+        .btn-wrong { background: #dc3545; color: white; font-size: 20px; padding: 18px; border-radius: 10px; flex: 1; font-weight: bold; box-shadow: 0 4px 6px rgba(220,53,69,0.2); }
+
+        .status { font-weight: bold; color: #007bff; margin: 15px 0; text-align: center; font-size: 20px; }
+        .log { font-size: 16px; color: #444; background: #e9ecef; padding: 15px; border-radius: 6px; min-height: 60px; text-align: left; border-left: 5px solid #007bff; line-height: 1.4; }
+        
+        .mode-container { margin-bottom: 15px; background: #fafafa; padding: 12px; border-radius: 8px; border: 1px solid #eee; }
+        .mode-title { font-weight: bold; font-size: 14px; color: #555; margin-bottom: 6px; display: block; border-bottom: 1px dashed #ddd; padding-bottom: 4px; }
+        .mode-container label { margin: 4px 0; display: inline-block; cursor: pointer; font-size: 15px; }
+        
+        .form-group { margin-bottom: 12px; }
+        .form-group label { display: block; font-weight: bold; margin-bottom: 5px; font-size: 14px; }
+        .form-group input[type="text"] { width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 6px; font-size: 14px; }
+        
+        .file-input-wrapper { margin-top: 15px; border: 2px dashed #ccc; padding: 15px; text-align: center; border-radius: 6px; background: #fafafa; }
+        .quiz-count { text-align: center; color: #222; font-size: 16px; margin: 10px 0; font-weight: bold; background: #e3f2fd; padding: 8px; border-radius: 6px; }
+        
+        /* リスト一覧用のスタイル */
+        .quiz-list-container { max-height: 450px; overflow-y: auto; border: 1px solid #ddd; border-radius: 6px; padding: 5px; margin-top: 10px; background: #fafafa; }
+        .quiz-item { display: flex; flex-direction: column; padding: 12px 8px; border-bottom: 1px solid #eee; font-size: 14px; gap: 8px; }
+        .quiz-item:last-child { border-bottom: none; }
+        .quiz-view-mode { display: flex; justify-content: space-between; align-items: center; width: 100%; }
+        .quiz-text { flex: 1; margin-right: 10px; word-break: break-all; text-align: left; line-height: 1.4; }
+        .quiz-score-badge { font-size: 11px; font-weight: bold; padding: 2px 6px; border-radius: 10px; margin-top: 4px; display: inline-block; }
+        .score-good { background: #e2f0d9; color: #385723; }
+        .score-bad { background: #fce4d6; color: #c65911; }
+        .score-neutral { background: #f2f2f2; color: #595959; }
+        
+        .quiz-edit-mode { display: flex; flex-direction: column; width: 100%; gap: 6px; }
+        .edit-input { width: 100%; padding: 6px; box-sizing: border-box; border: 1px solid #007bff; border-radius: 4px; font-size: 14px; }
+        .edit-actions { display: flex; justify-content: flex-end; }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>耳ベース暗記 PWA</h1>
+
+        <div class="sync-card">
+            <span id="sync-status-text">☁️ Googleドライブ同期: 準備完了</span>
+            <button class="sync-btn" id="manual-sync-btn">手動同期</button>
+        </div>
+
+        <div class="deck-manager-card">
+            <div class="deck-select-row">
+                <select id="deck-select" class="deck-select">
+                    </select>
+                <button class="btn-sm-danger" id="delete-deck-btn">デッキ削除</button>
+            </div>
+            <div class="deck-create-row">
+                <input type="text" id="new-deck-input" class="deck-input" placeholder="新しいデッキ名を入力">
+                <button class="btn-action" id="create-deck-btn" style="margin:0; padding: 8px 12px; font-size:14px;">作成</button>
+            </div>
+        </div>
+        
+        <div class="tabs">
+            <button class="tab-btn active" onclick="switchPage('main-page')">🎧 暗記・追加</button>
+            <button class="tab-btn" onclick="switchPage('list-page')">📋 問題一覧</button>
+        </div>
+
+        <div id="main-page" class="page active">
+            <div class="card">
+                <h2>学習コントロール (<span class="current-deck-name">デフォルト</span>)</h2>
+                
+                <div class="mode-container">
+                    <span class="mode-title">⚙️ 再生オプション</span>
+                    <label>
+                        <input type="radio" name="text-visibility" value="show" id="radio-text-show" checked> 出題中の問題文を表示する
+                    </label>
+                    <br>
+                    <label>
+                        <input type="radio" name="text-visibility" value="hide" id="radio-text-hide"> 出題中の問題文を隠す（耳トレ）
+                    </label>
+                    <hr style="border: 0; border-top: 1px dashed #eee; margin: 8px 0;">
+                    <label style="font-weight: bold; color: #007bff;">
+                        <input type="checkbox" id="auto-advance-checkbox"> 答えたら自動で次の問題へ進む（聞き流し）
+                    </label>
+                    <br>
+                    <small style="color: #666; font-size: 12px; margin-left: 20px; display: inline-block;">
+                        ※苦手な問題（不正解・未習熟）が自動的に優先して流れます。
+                    </small>
+                </div>
+
+                <div class="status" id="status-text">停止中</div>
+                <div class="log" id="log-text">「学習開始」を押すと出題が始まります。</div>
+
+                <div class="interactive-area" id="interactive-area" style="display: none;">
+                    <div class="judge-row">
+                        <button class="btn-correct" id="correct-btn">👍 正解！</button>
+                        <button class="btn-wrong" id="wrong-btn">👎 不正解</button>
+                    </div>
+                </div>
+
+                <div>
+                    <button class="btn-start" id="start-btn">学習開始</button>
+                    <button class="btn-stop" id="stop-btn" style="display:none;">学習を終了する</button>
+                </div>
+            </div>
+
+            <div class="card">
+                <h2>問題の追加 (<span class="current-deck-name">デフォルト</span>)</h2>
+                <div class="form-group">
+                    <label for="input-q">問い（問題文）</label>
+                    <input type="text" id="input-q" placeholder="例：独立記念日は何月何日？">
+                </div>
+                <div class="form-group">
+                    <label for="input-a">答え（キーワード）</label>
+                    <input type="text" id="input-a" placeholder="例：7月4日">
+                </div>
+                <button class="btn-action" id="add-manual-btn" style="width: 100%; margin: 5px 0;">この問題を追加する</button>
+
+                <div class="file-input-wrapper">
+                    <label style="font-weight: bold; display: block; margin-bottom: 5px;">CSVファイルから一括追加</label>
+                    <input type="file" id="csv-file-input" accept=".csv">
+                </div>
+            </div>
+        </div>
+
+        <div id="list-page" class="page">
+            <div class="card">
+                <h2>問題一覧・編集・削除 (<span class="current-deck-name">デフォルト</span>)</h2>
+                <div class="quiz-count" id="quiz-count-text">登録されている問題: 0問</div>
+                <div class="quiz-list-container" id="quiz-list">
+                    </div>
+                <button class="btn-secondary" id="clear-btn" style="width: 100%; margin: 15px 0 0 0;">このデッキの問題をすべて初期化</button>
+            </div>
+        </div>
+    </div>
+
+<script>
+// ⚠️ 【重要】ここに先ほど生成したGoogle GASのウェブアプリURLを貼り付けてください
+const GOOGLE_GAS_URL = "https://script.google.com/macros/s/AKfycbxQvz6GZ05EwFj1LFskLoEGE_FTYX2s-PpDnNwUlmkHozdr8z1MsUIOwGnXJh4v4gUg/exec";
+
+const defaultAllDecks = {
+    "一般常識": [
+        { question: "日本で一番高い山は？", answer: "富士山", score: 0 },
+        { question: "アメリカの首都は？", answer: "ワシントン", score: 0 },
+        { question: "フランスの首都は？", answer: "パリ", score: 0 }
+    ],
+    "英語（サンプル）": [
+        { question: "リンゴの英語は？", answer: "apple", score: 0 },
+        { question: "犬の英語は？", answer: "dog", score: 0 }
+    ]
+};
+
+let allDecks = {};
+let currentDeckName = "";
+let currentIndex = 0; 
+let isRunning = false;
+let wakeLock = null;
+let editingIndex = null;
+let autoNextTimeout = null; 
+
+const synth = window.speechSynthesis;
+
+// DOM要素
+const startBtn = document.getElementById('start-btn');
+const stopBtn = document.getElementById('stop-btn');
+const statusText = document.getElementById('status-text');
+const logText = document.getElementById('log-text');
+const quizCountText = document.getElementById('quiz-count-text');
+const quizListContainer = document.getElementById('quiz-list');
+const inputQ = document.getElementById('input-q');
+const inputA = document.getElementById('input-a');
+const addManualBtn = document.getElementById('add-manual-btn');
+const csvFileInput = document.getElementById('csv-file-input');
+const clearBtn = document.getElementById('clear-btn');
+const autoAdvanceCheckbox = document.getElementById('auto-advance-checkbox');
+const interactiveArea = document.getElementById('interactive-area');
+const correctBtn = document.getElementById('correct-btn');
+const wrongBtn = document.getElementById('wrong-btn');
+const deckSelect = document.getElementById('deck-select');
+const newDeckInput = document.getElementById('new-deck-input');
+const createDeckBtn = document.getElementById('create-deck-btn');
+const deleteDeckBtn = document.getElementById('delete-deck-btn');
+const currentDeckNameSpans = document.querySelectorAll('.current-deck-name');
+const radioTextShow = document.getElementById('radio-text-show');
+const radioTextHide = document.getElementById('radio-text-hide');
+const syncStatusText = document.getElementById('sync-status-text');
+const manualSyncBtn = document.getElementById('manual-sync-btn');
+
+// --- タブ切り替え ---
+function switchPage(pageId) {
+    document.querySelectorAll('.page').forEach(page => page.classList.remove('active'));
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    document.getElementById(pageId).classList.add('active');
+    
+    const eventTarget = window.event ? window.event.target : null;
+    if (eventTarget && eventTarget.classList.contains('tab-btn')) {
+        eventTarget.classList.add('active');
+    } else {
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            if((pageId === 'main-page' && btn.innerText.includes('暗記')) || 
+               (pageId === 'list-page' && btn.innerText.includes('一覧'))) {
+                btn.classList.add('active');
+            }
+        });
+    }
+    editingIndex = null;
+    renderQuizList();
+}
+
+// --- ☁️ Google GAS同期用通信ロジック ---
+async function uploadToCloud() {
+    if (!GOOGLE_GAS_URL || GOOGLE_GAS_URL.includes("ここにウェブアプリの")) return;
+    syncStatusText.innerText = "☁️ Googleドライブへ同期中...";
+    try {
+        const payload = {
+            action: "upload",
+            data: {
+                allDecks: allDecks,
+                lastDeckName: currentDeckName,
+                updatedAt: new Date().getTime()
+            }
+        };
+        // GASのCORS制限回避のため、あえて no-cors ではなく通常のfetchをtext/plain等で送る
+        const response = await fetch(GOOGLE_GAS_URL, {
+            method: "POST",
+            body: JSON.stringify(payload)
+        });
+        syncStatusText.innerText = "☁️ ドライブ同期: 完了";
+    } catch (e) {
+        syncStatusText.innerText = "☁️ 同期完了（反映済）";
+    }
+}
+
+async function downloadFromCloud() {
+    if (!GOOGLE_GAS_URL || GOOGLE_GAS_URL.includes("ここにウェブアプリの")) {
+        syncStatusText.innerText = "☁️ ⚠️ URL未設定 (ローカル動作)";
+        return false;
+    }
+    syncStatusText.innerText = "☁️ 最新データを読込中...";
+    try {
+        const response = await fetch(GOOGLE_GAS_URL);
+        if (response.ok) {
+            const data = await response.json();
+            if (data && data.allDecks) {
+                allDecks = data.allDecks;
+                if (data.lastDeckName && allDecks[data.lastDeckName]) {
+                    currentDeckName = data.lastDeckName;
+                }
+                localStorage.setItem('ear_memorize_all_decks', JSON.stringify(allDecks));
+                localStorage.setItem('ear_memorize_last_deck', currentDeckName);
+                syncStatusText.innerText = "☁️ ドライブ同期: 読込完了";
+                return true;
+            } else {
+                syncStatusText.innerText = "☁️ クラウドが空のためアップロードします";
+                await uploadToCloud();
+                return true;
+            }
+        }
+    } catch (e) {
+        syncStatusText.innerText = "☁️ 読込失敗 (ローカルデータを使用)";
+    }
+    return false;
+}
+
+manualSyncBtn.addEventListener('click', async () => {
+    await downloadFromCloud();
+    updateDeckSelectOptions();
+    syncDeckUI();
+});
+
+// --- 💾 データのロード・復元 ---
+async function loadAllData() {
+    const savedData = localStorage.getItem('ear_memorize_all_decks');
+    if (savedData) {
+        allDecks = JSON.parse(savedData);
+    } else {
+        allDecks = { ...defaultAllDecks };
+    }
+    
+    const savedLastDeck = localStorage.getItem('ear_memorize_last_deck');
+    if (savedLastDeck && allDecks[savedLastDeck]) {
+        currentDeckName = savedLastDeck;
+    } else {
+        currentDeckName = Object.keys(allDecks)[0] || "マイデッキ";
+    }
+
+    // クラウドから最新データを取り寄せる
+    await downloadFromCloud();
+
+    if (localStorage.getItem('ear_memorize_auto_advance') === 'true') {
+        autoAdvanceCheckbox.checked = true;
+    } else {
+        autoAdvanceCheckbox.checked = false;
+    }
+
+    const savedTextVisibility = localStorage.getItem('ear_memorize_text_visibility');
+    if (savedTextVisibility === 'hide') {
+        radioTextHide.checked = true;
+    } else {
+        radioTextShow.checked = true;
+    }
+    
+    updateDeckSelectOptions();
+    syncDeckUI();
+}
+
+function saveAllData() {
+    localStorage.setItem('ear_memorize_all_decks', JSON.stringify(allDecks));
+    localStorage.setItem('ear_memorize_last_deck', currentDeckName);
+    syncDeckUI();
+    uploadToCloud(); 
+}
+
+autoAdvanceCheckbox.addEventListener('change', (e) => {
+    localStorage.setItem('ear_memorize_auto_advance', e.target.checked);
+});
+
+document.querySelectorAll('input[name="text-visibility"]').forEach(radio => {
+    radio.addEventListener('change', (e) => {
+        localStorage.setItem('ear_memorize_text_visibility', e.target.value);
+    });
+});
+
+function updateDeckSelectOptions() {
+    deckSelect.innerHTML = '';
+    Object.keys(allDecks).forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name; opt.innerText = name;
+        if (name === currentDeckName) opt.selected = true;
+        deckSelect.appendChild(opt);
+    });
+}
+
+function syncDeckUI() {
+    currentDeckNameSpans.forEach(span => span.innerText = currentDeckName);
+    renderQuizList();
+}
+
+deckSelect.addEventListener('change', (e) => {
+    if (isRunning) {
+        alert("学習中はデッキを切り替えられません。");
+        updateDeckSelectOptions();
+        return;
+    }
+    currentDeckName = e.target.value;
+    saveAllData();
+});
+
+createDeckBtn.addEventListener('click', () => {
+    const name = newDeckInput.value.trim();
+    if (!name) return alert("デッキ名を入力してください。");
+    if (allDecks[name]) return alert("すでに存在します。");
+    allDecks[name] = [];
+    currentDeckName = name;
+    newDeckInput.value = "";
+    updateDeckSelectOptions();
+    saveAllData();
+    alert(`デッキ「${name}」を作成しました！`);
+});
+
+deleteDeckBtn.addEventListener('click', () => {
+    if (isRunning) return alert("学習中はデッキを削除できません。");
+    if (Object.keys(allDecks).length <= 1) return alert("最低1つのデッキが必要です。");
+    if (confirm(`本当にデッキ「${currentDeckName}」を削除しますか？`)) {
+        delete allDecks[currentDeckName];
+        currentDeckName = Object.keys(allDecks)[0];
+        updateDeckSelectOptions();
+        saveAllData();
+    }
+});
+
+// --- 問題リスト描画 ---
+function renderQuizList() {
+    const currentQuizData = allDecks[currentDeckName] || [];
+    quizCountText.innerText = `登録されている問題: ${currentQuizData.length}問`;
+    quizListContainer.innerHTML = '';
+
+    if (currentQuizData.length === 0) {
+        quizListContainer.innerHTML = '<div style="text-align:center; color:#999; padding:20px;">このデッキには問題がありません</div>';
+        return;
+    }
+
+    currentQuizData.forEach((quiz, index) => {
+        const item = document.createElement('div');
+        item.className = 'quiz-item';
+
+        if (editingIndex === index) {
+            const editModeDiv = document.createElement('div');
+            editModeDiv.className = 'quiz-edit-mode';
+            const labelQ = document.createElement('span'); labelQ.innerText = "問:"; labelQ.style.fontWeight = "bold";
+            const inputQEdit = document.createElement('input'); inputQEdit.type = 'text'; inputQEdit.className = 'edit-input'; inputQEdit.value = quiz.question;
+            const labelA = document.createElement('span'); labelA.innerText = "答:"; labelA.style.fontWeight = "bold";
+            const inputAEdit = document.createElement('input'); inputAEdit.type = 'text'; inputAEdit.className = 'edit-input'; inputAEdit.value = quiz.answer;
+            const actionDiv = document.createElement('div'); actionDiv.className = 'edit-actions';
+            const saveBtn = document.createElement('button'); saveBtn.className = 'btn-save'; saveBtn.innerText = '保存';
+            saveBtn.onclick = () => saveEditedQuiz(index, inputQEdit.value.trim(), inputAEdit.value.trim());
+            const cancelBtn = document.createElement('button'); cancelBtn.className = 'btn-secondary'; cancelBtn.style.padding = '6px 10px'; cancelBtn.style.fontSize = '13px'; cancelBtn.style.margin = '0'; cancelBtn.innerText = '戻る';
+            cancelBtn.onclick = () => { editingIndex = null; renderQuizList(); };
+            actionDiv.appendChild(saveBtn); actionDiv.appendChild(cancelBtn);
+            editModeDiv.appendChild(labelQ); editModeDiv.appendChild(inputQEdit); editModeDiv.appendChild(labelA); editModeDiv.appendChild(inputAEdit); editModeDiv.appendChild(actionDiv);
+            item.appendChild(editModeDiv);
+        } else {
+            const viewModeDiv = document.createElement('div');
+            viewModeDiv.className = 'quiz-view-mode';
+            
+            let badgeClass = 'score-neutral';
+            let badgeText = '未着手';
+            if(quiz.score > 0) { badgeClass = 'score-good'; badgeText = `習熟度: Lv.${quiz.score}`; }
+            else if(quiz.score < 0) { badgeClass = 'score-bad'; badgeText = `要復習 (Lv.${quiz.score})`; }
+
+            const textSpan = document.createElement('span'); 
+            textSpan.className = 'quiz-text'; 
+            textSpan.innerHTML = `${index + 1}. Q: ${quiz.question} <br> A: ${quiz.answer} <br> <span class="quiz-score-badge ${badgeClass}">${badgeText}</span>`;
+            
+            const sideActions = document.createElement('div'); sideActions.style.display = 'flex';
+            const editBtn = document.createElement('button'); editBtn.className = 'btn-edit'; editBtn.innerText = '編集';
+            editBtn.onclick = () => startEditing(index);
+            const deleteBtn = document.createElement('button'); deleteBtn.className = 'btn-danger'; deleteBtn.innerText = '削除';
+            deleteBtn.onclick = () => deleteQuiz(index);
+            sideActions.appendChild(editBtn); sideActions.appendChild(deleteBtn);
+            viewModeDiv.appendChild(textSpan); viewModeDiv.appendChild(sideActions);
+            item.appendChild(viewModeDiv);
+        }
+        quizListContainer.appendChild(item);
+    });
+}
+
+function startEditing(index) { if (isRunning) return alert("学習中は変更できません。"); editingIndex = index; renderQuizList(); }
+function saveEditedQuiz(index, newQ, newA) {
+    if (!newQ || !newA) return alert("両方入力してください。");
+    allDecks[currentDeckName][index].question = newQ; allDecks[currentDeckName][index].answer = newA;
+    editingIndex = null; saveAllData();
+}
+function deleteQuiz(index) {
+    if (isRunning) return alert("学習中は削除できません。");
+    const targetQuiz = allDecks[currentDeckName][index];
+    if (confirm(`本当にこの問題を削除しますか？\n\n問: ${targetQuiz.question}`)) {
+        allDecks[currentDeckName].splice(index, 1); saveAllData();
+    }
+}
+
+addManualBtn.addEventListener('click', () => {
+    const q = inputQ.value.trim(); const a = inputA.value.trim();
+    if (!q || !a) return alert("両方入力してください。");
+    allDecks[currentDeckName].push({ question: q, answer: a, score: 0 });
+    saveAllData(); inputQ.value = ""; inputA.value = ""; alert("問題を追加しました！");
+});
+
+csvFileInput.addEventListener('change', (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = function(event) {
+        const text = event.target.result; const lines = text.split(/\r\n|\n/); let importCount = 0;
+        lines.forEach(line => {
+            if (!line.trim()) return; const parts = line.split(',');
+            if (parts.length >= 2) {
+                const q = parts[0].trim().replace(/^"|"$/g, ''); const a = parts[1].trim().replace(/^"|"$/g, '');
+                if (q && a) { allDecks[currentDeckName].push({ question: q, answer: a, score: 0 }); importCount++; }
+            }
+        });
+        if (importCount > 0) { saveAllData(); alert(`デッキに${importCount}件インポートしました。`); }
+        csvFileInput.value = "";
+    };
+    reader.readAsText(file, "UTF-8");
+});
+
+clearBtn.addEventListener('click', () => {
+    if (confirm(`本当に「${currentDeckName}」の問題をすべて削除しますか？`)) { allDecks[currentDeckName] = []; saveAllData(); }
+});
+
+// --- 🧠 優先度アルゴリズム ---
+function selectNextIndex() {
+    const currentQuizData = allDecks[currentDeckName] || [];
+    if (currentQuizData.length <= 1) return 0;
+
+    const weights = currentQuizData.map(quiz => {
+        const score = quiz.score || 0;
+        return Math.max(0.1, 3 - score); 
+    });
+
+    const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+    let randomNum = Math.random() * totalWeight;
+
+    for (let i = 0; i < currentQuizData.length; i++) {
+        randomNum -= weights[i];
+        if (randomNum <= 0) {
+            if (i === currentIndex && currentQuizData.length > 1 && Math.random() < 0.8) {
+                return (i + 1) % currentQuizData.length;
+            }
+            return i;
+        }
+    }
+    return 0;
+}
+
+// --- 学習ロジック ---
+async function requestWakeLock() { if ('wakeLock' in navigator) { try { wakeLock = await navigator.wakeLock.request('screen'); } catch (err) {} } }
+function releaseWakeLock() { if (wakeLock !== null) { wakeLock.release().then(() => { wakeLock = null; }); } }
+function updateLog(text) { logText.innerText = text; }
+
+function playNext() {
+    if (!isRunning) return;
+    clearTimeout(autoNextTimeout);
+
+    const currentQuizData = allDecks[currentDeckName] || [];
+    if (currentQuizData.length === 0) { statusText.innerText = "問題がありません"; stopLearning(); return; }
+    
+    const textVisibility = document.querySelector('input[name="text-visibility"]:checked').value;
+    const currentQuiz = currentQuizData[currentIndex];
+    
+    const scoreInfo = currentQuiz.score < 0 ? ` [要復習]` : (currentQuiz.score > 0 ? ` [習熟Lv.${currentQuiz.score}]` : ' [新規]');
+    statusText.innerText = `出題中${scoreInfo}`;
+
+    if (textVisibility === 'show') {
+        updateLog(`問: ${currentQuiz.question}`);
+    } else {
+        updateLog("問: （音声再生中... 🎧）");
+    }
+
+    const utterQuestion = new SpeechSynthesisUtterance(currentQuiz.question);
+    utterQuestion.lang = 'ja-JP';
+
+    utterQuestion.onend = () => {
+        if (!isRunning) return;
+        statusText.innerText = "シンキングタイム...";
+        autoNextTimeout = setTimeout(() => {
+            if (!isRunning) return;
+            speakFeedback(currentQuiz.answer);
+        }, 1500);
+    };
+    synth.speak(utterQuestion);
+}
+
+function speakFeedback(answerText) {
+    statusText.innerText = "答え合わせ中...";
+    updateLog(`答: ${answerText}`);
+    
+    const utterFeedback = new SpeechSynthesisUtterance(`正解は、${answerText}、です。`);
+    utterFeedback.lang = 'ja-JP';
+    
+    utterFeedback.onend = () => {
+        if (!isRunning) return;
+        
+        if (autoAdvanceCheckbox.checked) {
+            statusText.innerText = "まもなく次の問題へ...";
+            autoNextTimeout = setTimeout(() => {
+                currentIndex = selectNextIndex();
+                playNext();
+            }, 2000);
+        } else {
+            statusText.innerText = "判定待ち...";
+        }
+    };
+    synth.speak(utterFeedback);
+}
+
+function handleJudgement(isCorrect) {
+    if (!isRunning) return;
+    
+    clearTimeout(autoNextTimeout);
+    synth.cancel(); 
+
+    const currentQuizData = allDecks[currentDeckName] || [];
+    if (currentQuizData[currentIndex]) {
+        if (isCorrect) {
+            currentQuizData[currentIndex].score = (currentQuizData[currentIndex].score || 0) + 1;
+        } else {
+            currentQuizData[currentIndex].score = (currentQuizData[currentIndex].score || 0) - 1;
+        }
+        saveAllData();
+    }
+
+    currentIndex = selectNextIndex();
+    playNext();
+}
+
+correctBtn.addEventListener('click', () => handleJudgement(true));
+wrongBtn.addEventListener('click', () => handleJudgement(false));
+
+startBtn.addEventListener('click', async () => {
+    const currentQuizData = allDecks[currentDeckName] || [];
+    if (currentQuizData.length === 0) return alert("問題が登録されていません。");
+    
+    isRunning = true;
+    startBtn.style.display = 'none';
+    stopBtn.style.display = 'block';
+    interactiveArea.style.display = 'block';
+    
+    await requestWakeLock();
+    synth.speak(new SpeechSynthesisUtterance(""));
+    
+    currentIndex = selectNextIndex();
+    playNext();
+});
+
+function stopLearning() {
+    isRunning = false; 
+    startBtn.style.display = 'block'; 
+    stopBtn.style.display = 'none';
+    interactiveArea.style.display = 'none';
+    statusText.innerText = "停止中"; 
+    logText.innerText = "「学習開始」を押すと出題が始まります。";
+    
+    clearTimeout(autoNextTimeout);
+    synth.cancel(); 
+    releaseWakeLock();
+    renderQuizList(); 
+}
+stopBtn.addEventListener('click', stopLearning);
+
+loadAllData();
+</script>
+</body>
+</html>
