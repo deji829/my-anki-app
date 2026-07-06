@@ -3,14 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>耳ベース暗記アプリ PWA Prototype v18</title>
+    <title>耳ベース暗記アプリ PWA Prototype v20</title>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
     <style>
         body { font-family: sans-serif; text-align: center; padding: 20px; background: #f0f2f5; color: #333; margin: 0; }
         .container { max-width: 450px; margin: 0 auto; padding-bottom: 40px; }
         
         /* クラウド同期ステータスエリア */
-        .sync-card { background: #e8f0fe; padding: 12px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); text-align: left; margin-bottom: 15px; border: 1px solid #4285f4; display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: bold; color: #1a73e8; }
-        .sync-btn { background: #4285f4; color: white; padding: 6px 12px; font-size: 12px; border-radius: 6px; margin: 0; font-weight: bold; }
+        .sync-card { background: #e6f4ea; padding: 12px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); text-align: left; margin-bottom: 15px; border: 1px solid #34a853; display: flex; justify-content: space-between; align-items: center; font-size: 13px; font-weight: bold; color: #137333; }
 
         /* デッキ管理エリアのスタイル */
         .deck-manager-card { background: #e3f2fd; padding: 15px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: left; margin-bottom: 15px; border: 1px solid #90caf9; }
@@ -80,12 +81,25 @@
 </head>
 <body>
 
+    <script>
+        // 🔒 セキュリティ保護：アクセス時に即座にパスワードを求める
+        const APP_PASSWORD = "ここに好きなパスワードを設定"; 
+        if (sessionStorage.getItem("auth_pwa") !== "true") {
+            let attempt = prompt("パスワードを入力してください：");
+            if (attempt === APP_PASSWORD) {
+                sessionStorage.setItem("auth_pwa", "true");
+            } else {
+                alert("パスワードが違います。");
+                window.location.href = "about:blank";
+            }
+        }
+    </script>
+
     <div class="container">
-        <h1>耳ベース暗記 PWA</h1>
+        <h1>耳ベース暗記 PWA v20</h1>
 
         <div class="sync-card">
-            <span id="sync-status-text">☁️ Googleドライブ同期: 準備完了</span>
-            <button class="sync-btn" id="manual-sync-btn">手動同期</button>
+            <span id="sync-status-text">🔥 Firebase Database: 接続中...</span>
         </div>
 
         <div class="deck-manager-card">
@@ -107,29 +121,20 @@
 
         <div id="main-page" class="page active">
             <div class="card">
-                <h2>学習コントロール (<span class="current-deck-name">デフォルト</span>)</h2>
+                <h2>学習コントロール (<span class="current-deck-name">...</span>)</h2>
                 
                 <div class="mode-container">
                     <span class="mode-title">⚙️ 再生オプション</span>
-                    <label>
-                        <input type="radio" name="text-visibility" value="show" id="radio-text-show" checked> 出題中の問題文を表示する
-                    </label>
-                    <br>
-                    <label>
-                        <input type="radio" name="text-visibility" value="hide" id="radio-text-hide"> 出題中の問題文を隠す（耳トレ）
-                    </label>
+                    <label><input type="radio" name="text-visibility" value="show" id="radio-text-show" checked> 出題中の問題文を表示する</label><br>
+                    <label><input type="radio" name="text-visibility" value="hide" id="radio-text-hide"> 出題中の問題文を隠す（耳トレ）</label>
                     <hr style="border: 0; border-top: 1px dashed #eee; margin: 8px 0;">
                     <label style="font-weight: bold; color: #007bff;">
                         <input type="checkbox" id="auto-advance-checkbox"> 答えたら自動で次の問題へ進む（聞き流し）
                     </label>
-                    <br>
-                    <small style="color: #666; font-size: 12px; margin-left: 20px; display: inline-block;">
-                        ※苦手な問題（不正解・未習熟）が自動的に優先して流れます。
-                    </small>
                 </div>
 
-                <div class="status" id="status-text">停止中</div>
-                <div class="log" id="log-text">「学習開始」を押すと出題が始まります。</div>
+                <div class="status" id="status-text">読み込み中...</div>
+                <div class="log" id="log-text">データを読み込んでいます。</div>
 
                 <div class="interactive-area" id="interactive-area" style="display: none;">
                     <div class="judge-row">
@@ -139,13 +144,13 @@
                 </div>
 
                 <div>
-                    <button class="btn-start" id="start-btn">学習開始</button>
+                    <button class="btn-start" id="start-btn" style="display:none;">学習開始</button>
                     <button class="btn-stop" id="stop-btn" style="display:none;">学習を終了する</button>
                 </div>
             </div>
 
             <div class="card">
-                <h2>問題の追加 (<span class="current-deck-name">デフォルト</span>)</h2>
+                <h2>問題の追加 (<span class="current-deck-name">...</span>)</h2>
                 <div class="form-group">
                     <label for="input-q">問い（問題文）</label>
                     <input type="text" id="input-q" placeholder="例：独立記念日は何月何日？">
@@ -165,39 +170,38 @@
 
         <div id="list-page" class="page">
             <div class="card">
-                <h2>問題一覧・編集・削除 (<span class="current-deck-name">デフォルト</span>)</h2>
+                <h2>問題一覧・編集・削除 (<span class="current-deck-name">...</span>)</h2>
                 <div class="quiz-count" id="quiz-count-text">登録されている問題: 0問</div>
-                <div class="quiz-list-container" id="quiz-list">
-                    </div>
+                <div class="quiz-list-container" id="quiz-list"></div>
                 <button class="btn-secondary" id="clear-btn" style="width: 100%; margin: 15px 0 0 0;">このデッキの問題をすべて初期化</button>
             </div>
         </div>
     </div>
 
 <script>
-// ⚠️ 【重要】ここに先ほど生成したGoogle GASのウェブアプリURLを貼り付けてください
-const GOOGLE_GAS_URL = "https://script.google.com/macros/s/AKfycbxQvz6GZ05EwFj1LFskLoEGE_FTYX2s-PpDnNwUlmkHozdr8z1MsUIOwGnXJh4v4gUg/exec";
-
-const defaultAllDecks = {
-    "一般常識": [
-        { question: "日本で一番高い山は？", answer: "富士山", score: 0 },
-        { question: "アメリカの首都は？", answer: "ワシントン", score: 0 },
-        { question: "フランスの首都は？", answer: "パリ", score: 0 }
-    ],
-    "英語（サンプル）": [
-        { question: "リンゴの英語は？", answer: "apple", score: 0 },
-        { question: "犬の英語は？", answer: "dog", score: 0 }
-    ]
+// ⚠️ 【超重要】先ほどFirebaseの画面でコピーしたfirebaseConfigをここにそのまま貼り付けてください
+const firebaseConfig = {
+  apiKey: "AIzaSyCs_4RTsqr205X5SQCfvEQ2dpQYE0qpWEs",
+  authDomain: "my-listening-anki-db.firebaseapp.com",
+  projectId: "my-listening-anki-db",
+  storageBucket: "my-listening-anki-db.firebasestorage.app",
+  messagingSenderId: "936571766184",
+  appId: "1:936571766184:web:248ec38a6047fbfd71899d"
 };
 
-let allDecks = {};
-let currentDeckName = "";
+// Firebaseの初期化
+firebase.initializeApp(firebaseConfig);
+const db = firebase.firestore();
+
+let currentDeckName = "一般常識";
+let currentQuizzes = []; 
+let currentQuizIdList = []; 
+let currentQuizDocIds = []; 
 let currentIndex = 0; 
 let isRunning = false;
 let wakeLock = null;
 let editingIndex = null;
 let autoNextTimeout = null; 
-
 const synth = window.speechSynthesis;
 
 // DOM要素
@@ -221,12 +225,8 @@ const newDeckInput = document.getElementById('new-deck-input');
 const createDeckBtn = document.getElementById('create-deck-btn');
 const deleteDeckBtn = document.getElementById('delete-deck-btn');
 const currentDeckNameSpans = document.querySelectorAll('.current-deck-name');
-const radioTextShow = document.getElementById('radio-text-show');
-const radioTextHide = document.getElementById('radio-text-hide');
 const syncStatusText = document.getElementById('sync-status-text');
-const manualSyncBtn = document.getElementById('manual-sync-btn');
 
-// --- タブ切り替え ---
 function switchPage(pageId) {
     document.querySelectorAll('.page').forEach(page => page.classList.remove('active'));
     document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
@@ -235,331 +235,274 @@ function switchPage(pageId) {
     const eventTarget = window.event ? window.event.target : null;
     if (eventTarget && eventTarget.classList.contains('tab-btn')) {
         eventTarget.classList.add('active');
-    } else {
-        document.querySelectorAll('.tab-btn').forEach(btn => {
-            if((pageId === 'main-page' && btn.innerText.includes('暗記')) || 
-               (pageId === 'list-page' && btn.innerText.includes('一覧'))) {
-                btn.classList.add('active');
-            }
-        });
     }
     editingIndex = null;
-    renderQuizList();
+    if (pageId === 'list-page') loadQuizList();
 }
 
-// --- ☁️ Google GAS同期用通信ロジック ---
-async function uploadToCloud() {
-    if (!GOOGLE_GAS_URL || GOOGLE_GAS_URL.includes("ここにウェブアプリの")) return;
-    syncStatusText.innerText = "☁️ Googleドライブへ同期中...";
-    try {
-        const payload = {
-            action: "upload",
-            data: {
-                allDecks: allDecks,
-                lastDeckName: currentDeckName,
-                updatedAt: new Date().getTime()
-            }
-        };
-        // GASのCORS制限回避のため、あえて no-cors ではなく通常のfetchをtext/plain等で送る
-        const response = await fetch(GOOGLE_GAS_URL, {
-            method: "POST",
-            body: JSON.stringify(payload)
-        });
-        syncStatusText.innerText = "☁️ ドライブ同期: 完了";
-    } catch (e) {
-        syncStatusText.innerText = "☁️ 同期完了（反映済）";
-    }
-}
-
-async function downloadFromCloud() {
-    if (!GOOGLE_GAS_URL || GOOGLE_GAS_URL.includes("ここにウェブアプリの")) {
-        syncStatusText.innerText = "☁️ ⚠️ URL未設定 (ローカル動作)";
-        return false;
-    }
-    syncStatusText.innerText = "☁️ 最新データを読込中...";
-    try {
-        const response = await fetch(GOOGLE_GAS_URL);
-        if (response.ok) {
-            const data = await response.json();
-            if (data && data.allDecks) {
-                allDecks = data.allDecks;
-                if (data.lastDeckName && allDecks[data.lastDeckName]) {
-                    currentDeckName = data.lastDeckName;
-                }
-                localStorage.setItem('ear_memorize_all_decks', JSON.stringify(allDecks));
-                localStorage.setItem('ear_memorize_last_deck', currentDeckName);
-                syncStatusText.innerText = "☁️ ドライブ同期: 読込完了";
-                return true;
-            } else {
-                syncStatusText.innerText = "☁️ クラウドが空のためアップロードします";
-                await uploadToCloud();
-                return true;
-            }
+// 🚀 高速化システム：デッキ一覧のリアルタイム監視
+function listenToDecks() {
+    db.collection("decks").onSnapshot((snapshot) => {
+        let deckNames = [];
+        snapshot.forEach(doc => deckNames.push(doc.id));
+        
+        if (deckNames.length === 0) {
+            db.collection("decks").doc("一般常識").set({ createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+            return;
         }
-    } catch (e) {
-        syncStatusText.innerText = "☁️ 読込失敗 (ローカルデータを使用)";
-    }
-    return false;
-}
 
-manualSyncBtn.addEventListener('click', async () => {
-    await downloadFromCloud();
-    updateDeckSelectOptions();
-    syncDeckUI();
-});
+        deckSelect.innerHTML = '';
+        deckNames.forEach(name => {
+            const opt = document.createElement('option');
+            opt.value = name; opt.innerText = name;
+            if (name === currentDeckName) opt.selected = true;
+            deckSelect.appendChild(opt);
+        });
 
-// --- 💾 データのロード・復元 ---
-async function loadAllData() {
-    const savedData = localStorage.getItem('ear_memorize_all_decks');
-    if (savedData) {
-        allDecks = JSON.parse(savedData);
-    } else {
-        allDecks = { ...defaultAllDecks };
-    }
-    
-    const savedLastDeck = localStorage.getItem('ear_memorize_last_deck');
-    if (savedLastDeck && allDecks[savedLastDeck]) {
-        currentDeckName = savedLastDeck;
-    } else {
-        currentDeckName = Object.keys(allDecks)[0] || "マイデッキ";
-    }
-
-    // クラウドから最新データを取り寄せる
-    await downloadFromCloud();
-
-    if (localStorage.getItem('ear_memorize_auto_advance') === 'true') {
-        autoAdvanceCheckbox.checked = true;
-    } else {
-        autoAdvanceCheckbox.checked = false;
-    }
-
-    const savedTextVisibility = localStorage.getItem('ear_memorize_text_visibility');
-    if (savedTextVisibility === 'hide') {
-        radioTextHide.checked = true;
-    } else {
-        radioTextShow.checked = true;
-    }
-    
-    updateDeckSelectOptions();
-    syncDeckUI();
-}
-
-function saveAllData() {
-    localStorage.setItem('ear_memorize_all_decks', JSON.stringify(allDecks));
-    localStorage.setItem('ear_memorize_last_deck', currentDeckName);
-    syncDeckUI();
-    uploadToCloud(); 
-}
-
-autoAdvanceCheckbox.addEventListener('change', (e) => {
-    localStorage.setItem('ear_memorize_auto_advance', e.target.checked);
-});
-
-document.querySelectorAll('input[name="text-visibility"]').forEach(radio => {
-    radio.addEventListener('change', (e) => {
-        localStorage.setItem('ear_memorize_text_visibility', e.target.value);
-    });
-});
-
-function updateDeckSelectOptions() {
-    deckSelect.innerHTML = '';
-    Object.keys(allDecks).forEach(name => {
-        const opt = document.createElement('option');
-        opt.value = name; opt.innerText = name;
-        if (name === currentDeckName) opt.selected = true;
-        deckSelect.appendChild(opt);
+        if (!deckNames.includes(currentDeckName)) {
+            currentDeckName = deckNames[0];
+        }
+        syncDeckUI();
     });
 }
 
-function syncDeckUI() {
+async function syncDeckUI() {
     currentDeckNameSpans.forEach(span => span.innerText = currentDeckName);
-    renderQuizList();
+    syncStatusText.innerText = `🔥 Firebase: 「${currentDeckName}」に同期完了`;
+    
+    // 現在のデッキ内の問題総数を取得
+    const snap = await db.collection("decks").doc(currentDeckName).collection("quizzes").count().get();
+    quizCountText.innerText = `登録されている問題: ${snap.data().count}問`;
+    
+    if (!isRunning) {
+        statusText.innerText = "停止中";
+        logText.innerText = "「学習開始」を押すと出題が始まります。";
+        startBtn.style.display = 'block';
+    }
 }
 
-deckSelect.addEventListener('change', (e) => {
-    if (isRunning) {
-        alert("学習中はデッキを切り替えられません。");
-        updateDeckSelectOptions();
-        return;
-    }
-    currentDeckName = e.target.value;
-    saveAllData();
-});
+// 🎧 暗記エンジン：30万問から苦手な問題をピンポイント抽出
+async function loadQuizzesForLearning() {
+    statusText.innerText = "選書中...";
+    // スコアが低い（苦手な）問題を優先して最大50問だけメモリに仮読み込みする（爆速化の核）
+    const snap = await db.collection("decks").doc(currentDeckName).collection("quizzes")
+        .orderBy("score", "asc").limit(50).get();
+        
+    currentQuizzes = [];
+    currentQuizDocIds = [];
+    snap.forEach(doc => {
+        currentQuizzes.push(doc.data());
+        currentQuizDocIds.push(doc.id);
+    });
+}
 
-createDeckBtn.addEventListener('click', () => {
-    const name = newDeckInput.value.trim();
-    if (!name) return alert("デッキ名を入力してください。");
-    if (allDecks[name]) return alert("すでに存在します。");
-    allDecks[name] = [];
-    currentDeckName = name;
-    newDeckInput.value = "";
-    updateDeckSelectOptions();
-    saveAllData();
-    alert(`デッキ「${name}」を作成しました！`);
-});
-
-deleteDeckBtn.addEventListener('click', () => {
-    if (isRunning) return alert("学習中はデッキを削除できません。");
-    if (Object.keys(allDecks).length <= 1) return alert("最低1つのデッキが必要です。");
-    if (confirm(`本当にデッキ「${currentDeckName}」を削除しますか？`)) {
-        delete allDecks[currentDeckName];
-        currentDeckName = Object.keys(allDecks)[0];
-        updateDeckSelectOptions();
-        saveAllData();
-    }
-});
-
-// --- 問題リスト描画 ---
-function renderQuizList() {
-    const currentQuizData = allDecks[currentDeckName] || [];
-    quizCountText.innerText = `登録されている問題: ${currentQuizData.length}問`;
+// 📋 一覧表示：直近の100問だけ分割読み込みして重さを完全回避
+async function loadQuizList() {
+    quizListContainer.innerHTML = '<div style="text-align:center; padding:20px;">読み込み中...</div>';
+    const snap = await db.collection("decks").doc(currentDeckName).collection("quizzes")
+        .orderBy("createdAt", "desc").limit(100).get();
+        
     quizListContainer.innerHTML = '';
-
-    if (currentQuizData.length === 0) {
+    if (snap.empty) {
         quizListContainer.innerHTML = '<div style="text-align:center; color:#999; padding:20px;">このデッキには問題がありません</div>';
         return;
     }
 
-    currentQuizData.forEach((quiz, index) => {
+    let index = 0;
+    snap.forEach(doc => {
+        const quiz = doc.data();
+        const docId = doc.id;
+        const localIndex = index;
+        
         const item = document.createElement('div');
         item.className = 'quiz-item';
 
-        if (editingIndex === index) {
-            const editModeDiv = document.createElement('div');
-            editModeDiv.className = 'quiz-edit-mode';
-            const labelQ = document.createElement('span'); labelQ.innerText = "問:"; labelQ.style.fontWeight = "bold";
-            const inputQEdit = document.createElement('input'); inputQEdit.type = 'text'; inputQEdit.className = 'edit-input'; inputQEdit.value = quiz.question;
-            const labelA = document.createElement('span'); labelA.innerText = "答:"; labelA.style.fontWeight = "bold";
-            const inputAEdit = document.createElement('input'); inputAEdit.type = 'text'; inputAEdit.className = 'edit-input'; inputAEdit.value = quiz.answer;
-            const actionDiv = document.createElement('div'); actionDiv.className = 'edit-actions';
-            const saveBtn = document.createElement('button'); saveBtn.className = 'btn-save'; saveBtn.innerText = '保存';
-            saveBtn.onclick = () => saveEditedQuiz(index, inputQEdit.value.trim(), inputAEdit.value.trim());
-            const cancelBtn = document.createElement('button'); cancelBtn.className = 'btn-secondary'; cancelBtn.style.padding = '6px 10px'; cancelBtn.style.fontSize = '13px'; cancelBtn.style.margin = '0'; cancelBtn.innerText = '戻る';
-            cancelBtn.onclick = () => { editingIndex = null; renderQuizList(); };
-            actionDiv.appendChild(saveBtn); actionDiv.appendChild(cancelBtn);
-            editModeDiv.appendChild(labelQ); editModeDiv.appendChild(inputQEdit); editModeDiv.appendChild(labelA); editModeDiv.appendChild(inputAEdit); editModeDiv.appendChild(actionDiv);
-            item.appendChild(editModeDiv);
-        } else {
-            const viewModeDiv = document.createElement('div');
-            viewModeDiv.className = 'quiz-view-mode';
-            
-            let badgeClass = 'score-neutral';
-            let badgeText = '未着手';
-            if(quiz.score > 0) { badgeClass = 'score-good'; badgeText = `習熟度: Lv.${quiz.score}`; }
-            else if(quiz.score < 0) { badgeClass = 'score-bad'; badgeText = `要復習 (Lv.${quiz.score})`; }
+        let badgeClass = 'score-neutral';
+        let badgeText = '未着手';
+        if(quiz.score > 0) { badgeClass = 'score-good'; badgeText = `習熟度: Lv.${quiz.score}`; }
+        else if(quiz.score < 0) { badgeClass = 'score-bad'; badgeText = `要復習 (Lv.${quiz.score})`; }
 
-            const textSpan = document.createElement('span'); 
-            textSpan.className = 'quiz-text'; 
-            textSpan.innerHTML = `${index + 1}. Q: ${quiz.question} <br> A: ${quiz.answer} <br> <span class="quiz-score-badge ${badgeClass}">${badgeText}</span>`;
-            
-            const sideActions = document.createElement('div'); sideActions.style.display = 'flex';
-            const editBtn = document.createElement('button'); editBtn.className = 'btn-edit'; editBtn.innerText = '編集';
-            editBtn.onclick = () => startEditing(index);
-            const deleteBtn = document.createElement('button'); deleteBtn.className = 'btn-danger'; deleteBtn.innerText = '削除';
-            deleteBtn.onclick = () => deleteQuiz(index);
-            sideActions.appendChild(editBtn); sideActions.appendChild(deleteBtn);
-            viewModeDiv.appendChild(textSpan); viewModeDiv.appendChild(sideActions);
-            item.appendChild(viewModeDiv);
-        }
+        item.innerHTML = `
+            <div class="quiz-view-mode" id="view-${docId}">
+                <span class="quiz-text">
+                    Q: ${quiz.question} <br> A: ${quiz.answer} <br> 
+                    <span class="quiz-score-badge ${badgeClass}">${badgeText}</span>
+                </span>
+                <div>
+                    <button class="btn-edit" onclick="startInlineEdit('${docId}', '${quiz.question}', '${quiz.answer}')">編集</button>
+                    <button class="btn-danger" onclick="deleteInlineQuiz('${docId}')">削除</button>
+                </div>
+            </div>
+            <div class="quiz-edit-mode" id="edit-${docId}" style="display:none;">
+                <input type="text" class="edit-input" id="input-q-${docId}" value="${quiz.question}">
+                <input type="text" class="edit-input" id="input-a-${docId}" value="${quiz.answer}">
+                <div class="edit-actions">
+                    <button class="btn-save" onclick="saveInlineEdit('${docId}')">保存</button>
+                    <button class="btn-secondary" onclick="cancelInlineEdit('${docId}')">戻る</button>
+                </div>
+            </div>
+        `;
         quizListContainer.appendChild(item);
+        index++;
     });
 }
 
-function startEditing(index) { if (isRunning) return alert("学習中は変更できません。"); editingIndex = index; renderQuizList(); }
-function saveEditedQuiz(index, newQ, newA) {
-    if (!newQ || !newA) return alert("両方入力してください。");
-    allDecks[currentDeckName][index].question = newQ; allDecks[currentDeckName][index].answer = newA;
-    editingIndex = null; saveAllData();
+window.startInlineEdit = function(id, q, a) {
+    document.getElementById(`view-${id}`).style.display = 'none';
+    document.getElementById(`edit-${id}`).style.display = 'flex';
 }
-function deleteQuiz(index) {
-    if (isRunning) return alert("学習中は削除できません。");
-    const targetQuiz = allDecks[currentDeckName][index];
-    if (confirm(`本当にこの問題を削除しますか？\n\n問: ${targetQuiz.question}`)) {
-        allDecks[currentDeckName].splice(index, 1); saveAllData();
+window.cancelInlineEdit = function(id) {
+    document.getElementById(`view-${id}`).style.display = 'flex';
+    document.getElementById(`edit-${id}`).style.display = 'none';
+}
+window.saveInlineEdit = async function(id) {
+    const newQ = document.getElementById(`input-q-${id}`).value.trim();
+    const newA = document.getElementById(`input-a-${id}`).value.trim();
+    if(!newQ || !newA) return alert("両方入力してください");
+    await db.collection("decks").doc(currentDeckName).collection("quizzes").doc(id).update({
+        question: newQ, answer: newA
+    });
+    loadQuizList();
+}
+window.deleteInlineQuiz = async function(id) {
+    if(confirm("この問題を削除しますか？")) {
+        await db.collection("decks").doc(currentDeckName).collection("quizzes").doc(id).delete();
+        loadQuizList();
+        syncDeckUI();
     }
 }
 
-addManualBtn.addEventListener('click', () => {
-    const q = inputQ.value.trim(); const a = inputA.value.trim();
-    if (!q || !a) return alert("両方入力してください。");
-    allDecks[currentDeckName].push({ question: q, answer: a, score: 0 });
-    saveAllData(); inputQ.value = ""; inputA.value = ""; alert("問題を追加しました！");
+deckSelect.addEventListener('change', (e) => {
+    if (isRunning) return alert("学習中はデッキを切り替えられません。");
+    currentDeckName = e.target.value;
+    syncDeckUI();
 });
 
+createDeckBtn.addEventListener('click', async () => {
+    const name = newDeckInput.value.trim();
+    if (!name) return alert("デッキ名を入力してください。");
+    await db.collection("decks").doc(name).set({ createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+    currentDeckName = name;
+    newDeckInput.value = "";
+    alert(`デッキ「${name}」を作成しました！`);
+});
+
+deleteDeckBtn.addEventListener('click', async () => {
+    if (isRunning) return alert("学習中はデッキを削除できません。");
+    if (confirm(`本当にデッキ「${currentDeckName}」を削除しますか？中の問題もすべて消去されます。`)) {
+        // デッキドキュメントを削除（サブコレクションは別途クリーンアップが必要ですが、まずはFirestoreの仕様に基づき削除）
+        await db.collection("decks").doc(currentDeckName).delete();
+        alert("デッキを削除しました。");
+    }
+});
+
+addManualBtn.addEventListener('click', async () => {
+    const q = inputQ.value.trim(); const a = inputA.value.trim();
+    if (!q || !a) return alert("両方入力してください。");
+    await db.collection("decks").doc(currentDeckName).collection("quizzes").add({
+        question: q, answer: a, score: 0, createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    inputQ.value = ""; inputA.value = "";
+    alert("問題を追加しました！");
+    syncDeckUI();
+});
+
+// CSV一括インポート機能（5万問の移行もこれで一瞬）
 csvFileInput.addEventListener('change', (e) => {
     const file = e.target.files[0]; if (!file) return;
     const reader = new FileReader();
-    reader.onload = function(event) {
-        const text = event.target.result; const lines = text.split(/\r\n|\n/); let importCount = 0;
-        lines.forEach(line => {
-            if (!line.trim()) return; const parts = line.split(',');
+    reader.onload = async function(event) {
+        const text = event.target.result; const lines = text.split(/\r\n|\n/);
+        let batch = db.batch();
+        let count = 0;
+        
+        statusText.innerText = "一括インポート中...";
+        
+        for (let line of lines) {
+            if (!line.trim()) continue;
+            const parts = line.split(',');
             if (parts.length >= 2) {
-                const q = parts[0].trim().replace(/^"|"$/g, ''); const a = parts[1].trim().replace(/^"|"$/g, '');
-                if (q && a) { allDecks[currentDeckName].push({ question: q, answer: a, score: 0 }); importCount++; }
+                const q = parts[0].trim().replace(/^"|"$/g, '');
+                const a = parts[1].trim().replace(/^"|"$/g, '');
+                if (q && a) {
+                    const docRef = db.collection("decks").doc(currentDeckName).collection("quizzes").doc();
+                    batch.set(docRef, {
+                        question: q, answer: a, score: 0, createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                    count++;
+                    
+                    // Firestoreのバッチ制限（500件）ごとにコミット
+                    if (count % 400 === 0) {
+                        await batch.commit();
+                        batch = db.batch();
+                    }
+                }
             }
-        });
-        if (importCount > 0) { saveAllData(); alert(`デッキに${importCount}件インポートしました。`); }
+        }
+        if (count % 400 !== 0) {
+            await batch.commit();
+        }
+        alert(`デッキに${count}件インポートしました！`);
         csvFileInput.value = "";
+        syncDeckUI();
     };
     reader.readAsText(file, "UTF-8");
 });
 
-clearBtn.addEventListener('click', () => {
-    if (confirm(`本当に「${currentDeckName}」の問題をすべて削除しますか？`)) { allDecks[currentDeckName] = []; saveAllData(); }
+clearBtn.addEventListener('click', async () => {
+    if (confirm(`本当に「${currentDeckName}」の問題をすべて削除しますか？`)) {
+        const snap = await db.collection("decks").doc(currentDeckName).collection("quizzes").get();
+        const batch = db.batch();
+        snap.forEach(doc => batch.delete(doc.ref));
+        await batch.commit();
+        alert("すべて消去しました。");
+        syncDeckUI();
+        loadQuizList();
+    }
 });
 
-// --- 🧠 優先度アルゴリズム ---
+// アルゴリズム
 function selectNextIndex() {
-    const currentQuizData = allDecks[currentDeckName] || [];
-    if (currentQuizData.length <= 1) return 0;
-
-    const weights = currentQuizData.map(quiz => {
-        const score = quiz.score || 0;
-        return Math.max(0.1, 3 - score); 
-    });
-
+    if (currentQuizzes.length <= 1) return 0;
+    const weights = currentQuizzes.map(quiz => Math.max(0.1, 3 - (quiz.score || 0)));
     const totalWeight = weights.reduce((sum, w) => sum + w, 0);
     let randomNum = Math.random() * totalWeight;
 
-    for (let i = 0; i < currentQuizData.length; i++) {
+    for (let i = 0; i < currentQuizzes.length; i++) {
         randomNum -= weights[i];
-        if (randomNum <= 0) {
-            if (i === currentIndex && currentQuizData.length > 1 && Math.random() < 0.8) {
-                return (i + 1) % currentQuizData.length;
-            }
-            return i;
-        }
+        if (randomNum <= 0) return i;
     }
     return 0;
 }
 
-// --- 学習ロジック ---
+// 学習ロジック
 async function requestWakeLock() { if ('wakeLock' in navigator) { try { wakeLock = await navigator.wakeLock.request('screen'); } catch (err) {} } }
 function releaseWakeLock() { if (wakeLock !== null) { wakeLock.release().then(() => { wakeLock = null; }); } }
-function updateLog(text) { logText.innerText = text; }
 
-function playNext() {
+async function playNext() {
     if (!isRunning) return;
     clearTimeout(autoNextTimeout);
 
-    const currentQuizData = allDecks[currentDeckName] || [];
-    if (currentQuizData.length === 0) { statusText.innerText = "問題がありません"; stopLearning(); return; }
+    if (currentQuizzes.length === 0) {
+        await loadQuizzesForLearning();
+        if (currentQuizzes.length === 0) {
+            statusText.innerText = "問題がありません"; stopLearning(); return;
+        }
+    }
     
     const textVisibility = document.querySelector('input[name="text-visibility"]:checked').value;
-    const currentQuiz = currentQuizData[currentIndex];
+    const currentQuiz = currentQuizzes[currentIndex];
+    const score = currentQuiz.score || 0;
     
-    const scoreInfo = currentQuiz.score < 0 ? ` [要復習]` : (currentQuiz.score > 0 ? ` [習熟Lv.${currentQuiz.score}]` : ' [新規]');
-    statusText.innerText = `出題中${scoreInfo}`;
-
+    statusText.innerText = `出題中 [習熟Lv.${score}]`;
     if (textVisibility === 'show') {
-        updateLog(`問: ${currentQuiz.question}`);
+        logText.innerText = `问: ${currentQuiz.question}`;
     } else {
-        updateLog("問: （音声再生中... 🎧）");
+        logText.innerText = "問: （音声再生中... 🎧）";
     }
 
     const utterQuestion = new SpeechSynthesisUtterance(currentQuiz.question);
     utterQuestion.lang = 'ja-JP';
-
     utterQuestion.onend = () => {
         if (!isRunning) return;
         statusText.innerText = "シンキングタイム...";
@@ -573,17 +516,17 @@ function playNext() {
 
 function speakFeedback(answerText) {
     statusText.innerText = "答え合わせ中...";
-    updateLog(`答: ${answerText}`);
+    logText.innerText = `答: ${answerText}`;
     
     const utterFeedback = new SpeechSynthesisUtterance(`正解は、${answerText}、です。`);
     utterFeedback.lang = 'ja-JP';
-    
     utterFeedback.onend = () => {
         if (!isRunning) return;
-        
         if (autoAdvanceCheckbox.checked) {
             statusText.innerText = "まもなく次の問題へ...";
-            autoNextTimeout = setTimeout(() => {
+            autoNextTimeout = setTimeout(async () => {
+                // 定期的にメモリ内の問題プールを入れ替える
+                if (Math.random() < 0.2) await loadQuizzesForLearning();
                 currentIndex = selectNextIndex();
                 playNext();
             }, 2000);
@@ -594,22 +537,22 @@ function speakFeedback(answerText) {
     synth.speak(utterFeedback);
 }
 
-function handleJudgement(isCorrect) {
+async function handleJudgement(isCorrect) {
     if (!isRunning) return;
-    
     clearTimeout(autoNextTimeout);
     synth.cancel(); 
 
-    const currentQuizData = allDecks[currentDeckName] || [];
-    if (currentQuizData[currentIndex]) {
-        if (isCorrect) {
-            currentQuizData[currentIndex].score = (currentQuizData[currentIndex].score || 0) + 1;
-        } else {
-            currentQuizData[currentIndex].score = (currentQuizData[currentIndex].score || 0) - 1;
-        }
-        saveAllData();
+    const docId = currentQuizDocIds[currentIndex];
+    if (docId) {
+        const newScore = (currentQuizzes[currentIndex].score || 0) + (isCorrect ? 1 : -1);
+        currentQuizzes[currentIndex].score = newScore;
+        // クラウドの特定の問題のスコアだけをピンポイント更新
+        db.collection("decks").doc(currentDeckName).collection("quizzes").doc(docId).update({
+            score: newScore
+        });
     }
 
+    if (Math.random() < 0.1) await loadQuizzesForLearning();
     currentIndex = selectNextIndex();
     playNext();
 }
@@ -618,9 +561,6 @@ correctBtn.addEventListener('click', () => handleJudgement(true));
 wrongBtn.addEventListener('click', () => handleJudgement(false));
 
 startBtn.addEventListener('click', async () => {
-    const currentQuizData = allDecks[currentDeckName] || [];
-    if (currentQuizData.length === 0) return alert("問題が登録されていません。");
-    
     isRunning = true;
     startBtn.style.display = 'none';
     stopBtn.style.display = 'block';
@@ -629,6 +569,7 @@ startBtn.addEventListener('click', async () => {
     await requestWakeLock();
     synth.speak(new SpeechSynthesisUtterance(""));
     
+    await loadQuizzesForLearning();
     currentIndex = selectNextIndex();
     playNext();
 });
@@ -640,15 +581,15 @@ function stopLearning() {
     interactiveArea.style.display = 'none';
     statusText.innerText = "停止中"; 
     logText.innerText = "「学習開始」を押すと出題が始まります。";
-    
     clearTimeout(autoNextTimeout);
     synth.cancel(); 
     releaseWakeLock();
-    renderQuizList(); 
+    syncDeckUI();
 }
 stopBtn.addEventListener('click', stopLearning);
 
-loadAllData();
+// 初期起動
+listenToDecks();
 </script>
 </body>
 </html>
