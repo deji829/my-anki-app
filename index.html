@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>耳ベース暗記アプリ PWA Prototype v21</title>
+    <title>耳ベース暗記アプリ PWA Prototype v22</title>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
     <style>
@@ -82,7 +82,7 @@
 <body>
 
     <div class="container">
-        <h1>耳ベース暗記 PWA v21</h1>
+        <h1>耳ベース暗記 PWA v22</h1>
 
         <div class="sync-card">
             <span id="sync-status-text">🔥 Firebase Database: 接続中...</span>
@@ -165,7 +165,7 @@
     </div>
 
 <script>
-// ⚠️ 【超重要】ここにあなた専用のfirebaseConfigをそのまま貼り付けてください
+// ⚠️ あなた専用のFirebase設定情報を最初から設定してあります
 const firebaseConfig = {
   apiKey: "AIzaSyCs_4RTsqr205X5SQCfvEQ2dpQYE0qpWEs",
   authDomain: "my-listening-anki-db.firebaseapp.com",
@@ -181,12 +181,10 @@ const db = firebase.firestore();
 
 let currentDeckName = "一般常識";
 let currentQuizzes = []; 
-let currentQuizIdList = []; 
 let currentQuizDocIds = []; 
 let currentIndex = 0; 
 let isRunning = false;
 let wakeLock = null;
-let editingIndex = null;
 let autoNextTimeout = null; 
 const synth = window.speechSynthesis;
 
@@ -222,11 +220,10 @@ function switchPage(pageId) {
     if (eventTarget && eventTarget.classList.contains('tab-btn')) {
         eventTarget.classList.add('active');
     }
-    editingIndex = null;
     if (pageId === 'list-page') loadQuizList();
 }
 
-// デッキ一覧のリアルタイム監視
+// デッキ一覧のリアルタイム監視（読み込みエラー回避処理を強化）
 function listenToDecks() {
     db.collection("decks").onSnapshot((snapshot) => {
         let deckNames = [];
@@ -249,6 +246,9 @@ function listenToDecks() {
             currentDeckName = deckNames[0];
         }
         syncDeckUI();
+    }, (error) => {
+        console.error("Firestore接続エラー:", error);
+        syncStatusText.innerText = "❌ Firebase接続エラー（ルールを確認してください）";
     });
 }
 
@@ -256,8 +256,12 @@ async function syncDeckUI() {
     currentDeckNameSpans.forEach(span => span.innerText = currentDeckName);
     syncStatusText.innerText = `🔥 Firebase: 「${currentDeckName}」に同期完了`;
     
-    const snap = await db.collection("decks").doc(currentDeckName).collection("quizzes").count().get();
-    quizCountText.innerText = `登録されている問題: ${snap.data().count}問`;
+    try {
+        const snap = await db.collection("decks").doc(currentDeckName).collection("quizzes").get();
+        quizCountText.innerText = `登録されている問題: ${snap.size}問`;
+    } catch (e) {
+        quizCountText.innerText = `登録されている問題: --問`;
+    }
     
     if (!isRunning) {
         statusText.innerText = "停止中";
@@ -266,68 +270,73 @@ async function syncDeckUI() {
     }
 }
 
-// 学習用クイズデータ抽出
+// 学習用クイズデータ抽出（複合インデックスの依存を排除してエラーを絶対回避）
 async function loadQuizzesForLearning() {
     statusText.innerText = "選書中...";
-    const snap = await db.collection("decks").doc(currentDeckName).collection("quizzes")
-        .orderBy("score", "asc").limit(50).get();
-        
-    currentQuizzes = [];
-    currentQuizDocIds = [];
-    snap.forEach(doc => {
-        currentQuizzes.push(doc.data());
-        currentQuizDocIds.push(doc.id);
-    });
+    try {
+        // エラーの原因になりやすいorderByを一時的に外し、単純にデータを最大50件引っ張る形にして確実に開通させる
+        const snap = await db.collection("decks").doc(currentDeckName).collection("quizzes").limit(50).get();
+            
+        currentQuizzes = [];
+        currentQuizDocIds = [];
+        snap.forEach(doc => {
+            currentQuizzes.push(doc.data());
+            currentQuizDocIds.push(doc.id);
+        });
+    } catch (e) {
+        console.error("データ取得エラー:", e);
+    }
 }
 
 // クイズ一覧取得
 async function loadQuizList() {
     quizListContainer.innerHTML = '<div style="text-align:center; padding:20px;">読み込み中...</div>';
-    const snap = await db.collection("decks").doc(currentDeckName).collection("quizzes")
-        .orderBy("createdAt", "desc").limit(100).get();
-        
-    quizListContainer.innerHTML = '';
-    if (snap.empty) {
-        quizListContainer.innerHTML = '<div style="text-align:center; color:#999; padding:20px;">このデッキには問題がありません</div>';
-        return;
+    try {
+        const snap = await db.collection("decks").doc(currentDeckName).collection("quizzes").limit(100).get();
+            
+        quizListContainer.innerHTML = '';
+        if (snap.empty) {
+            quizListContainer.innerHTML = '<div style="text-align:center; color:#999; padding:20px;">このデッキには問題がありません</div>';
+            return;
+        }
+
+        snap.forEach(doc => {
+            const quiz = doc.data();
+            const docId = doc.id;
+            
+            const item = document.createElement('div');
+            item.className = 'quiz-item';
+
+            let badgeClass = 'score-neutral';
+            let badgeText = '未着手';
+            if(quiz.score > 0) { badgeClass = 'score-good'; badgeText = `習熟度: Lv.${quiz.score}`; }
+            else if(quiz.score < 0) { badgeClass = 'score-bad'; badgeText = `要復習 (Lv.${quiz.score})`; }
+
+            item.innerHTML = `
+                <div class="quiz-view-mode" id="view-${docId}">
+                    <span class="quiz-text">
+                        Q: ${quiz.question} <br> A: ${quiz.answer} <br> 
+                        <span class="quiz-score-badge ${badgeClass}">${badgeText}</span>
+                    </span>
+                    <div>
+                        <button class="btn-edit" onclick="startInlineEdit('${docId}', '${quiz.question}', '${quiz.answer}')">編集</button>
+                        <button class="btn-danger" onclick="deleteInlineQuiz('${docId}')">削除</button>
+                    </div>
+                </div>
+                <div class="quiz-edit-mode" id="edit-${docId}" style="display:none;">
+                    <input type="text" class="edit-input" id="input-q-${docId}" value="${quiz.question}">
+                    <input type="text" class="edit-input" id="input-a-${docId}" value="${quiz.answer}">
+                    <div class="edit-actions">
+                        <button class="btn-save" onclick="saveInlineEdit('${docId}')">保存</button>
+                        <button class="btn-secondary" onclick="cancelInlineEdit('${docId}')">戻る</button>
+                    </div>
+                </div>
+            `;
+            quizListContainer.appendChild(item);
+        });
+    } catch (e) {
+        quizListContainer.innerHTML = '<div style="text-align:center; color:red; padding:20px;">一覧の取得に失敗しました</div>';
     }
-
-    let index = 0;
-    snap.forEach(doc => {
-        const quiz = doc.data();
-        const docId = doc.id;
-        
-        const item = document.createElement('div');
-        item.className = 'quiz-item';
-
-        let badgeClass = 'score-neutral';
-        let badgeText = '未着手';
-        if(quiz.score > 0) { badgeClass = 'score-good'; badgeText = `習熟度: Lv.${quiz.score}`; }
-        else if(quiz.score < 0) { badgeClass = 'score-bad'; badgeText = `要復習 (Lv.${quiz.score})`; }
-
-        item.innerHTML = `
-            <div class="quiz-view-mode" id="view-${docId}">
-                <span class="quiz-text">
-                    Q: ${quiz.question} <br> A: ${quiz.answer} <br> 
-                    <span class="quiz-score-badge ${badgeClass}">${badgeText}</span>
-                </span>
-                <div>
-                    <button class="btn-edit" onclick="startInlineEdit('${docId}', '${quiz.question}', '${quiz.answer}')">編集</button>
-                    <button class="btn-danger" onclick="deleteInlineQuiz('${docId}')">削除</button>
-                </div>
-            </div>
-            <div class="quiz-edit-mode" id="edit-${docId}" style="display:none;">
-                <input type="text" class="edit-input" id="input-q-${docId}" value="${quiz.question}">
-                <input type="text" class="edit-input" id="input-a-${docId}" value="${quiz.answer}">
-                <div class="edit-actions">
-                    <button class="btn-save" onclick="saveInlineEdit('${docId}')">保存</button>
-                    <button class="btn-secondary" onclick="cancelInlineEdit('${docId}')">戻る</button>
-                </div>
-            </div>
-        `;
-        quizListContainer.appendChild(item);
-        index++;
-    });
 }
 
 window.startInlineEdit = function(id, q, a) {
@@ -444,6 +453,7 @@ clearBtn.addEventListener('click', async () => {
 
 function selectNextIndex() {
     if (currentQuizzes.length <= 1) return 0;
+    // 習熟度に応じてランダムに出題確率を変える（スコアが低いものが選ばれやすい）
     const weights = currentQuizzes.map(quiz => Math.max(0.1, 3 - (quiz.score || 0)));
     const totalWeight = weights.reduce((sum, w) => sum + w, 0);
     let randomNum = Math.random() * totalWeight;
