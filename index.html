@@ -554,6 +554,10 @@
                             <label for="input-a">ANSWER</label>
                             <input type="text" id="input-a" placeholder="解答を入力">
                         </div>
+                        <div class="form-group">
+                            <label for="input-explanation">EXPLANATION</label>
+                            <input type="text" id="input-explanation" placeholder="解説を入力(任意)">
+                        </div>
                         <button class="btn-action" id="add-manual-btn" style="width: 100%; margin: 5px 0;">アイテムを追加</button>
 
                         <div class="file-input-wrapper">
@@ -771,7 +775,8 @@ function renderQuizList(items) {
         div.innerHTML = `
             <div class="quiz-view-mode" id="view-${docId}">
                 <span class="quiz-text">
-                    Q: ${quiz.question} <br> A: ${quiz.answer} <br> 
+                    Q: ${quiz.question} <br> A: ${quiz.answer} <br>
+                    ${quiz.explanation ? `<div style="font-size:12px; color:var(--primary); margin-top:4px;">解説: ${quiz.explanation}</div>` : ''}
                     <span class="quiz-score-badge ${badgeClass}">${badgeText}</span>
                 </span>
                 <div style="flex-shrink:0;">
@@ -856,12 +861,17 @@ deleteDeckBtn.addEventListener('click', async () => {
 });
 
 addManualBtn.addEventListener('click', async () => {
-    const q = inputQ.value.trim(); const a = inputA.value.trim();
-    if (!q || !a) return alert("入力エラー");
+    const q = inputQ.value.trim(); 
+    const a = inputA.value.trim();
+    const exp = document.getElementById('input-explanation').value.trim(); // 追加
+    if (!q || !a) return alert("問題と解答は必須です");
+    
     await db.collection("decks").doc(currentDeckName).collection("quizzes").add({
-        question: q, answer: a, score: 0, createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        question: q, answer: a, explanation: exp, // 追加
+        score: 0, createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
     inputQ.value = ""; inputA.value = "";
+    document.getElementById('input-explanation').value = ""; // クリア追加
     syncDeckUI();
 });
 
@@ -878,19 +888,24 @@ csvFileInput.addEventListener('change', (e) => {
         for (let line of lines) {
             if (!line.trim()) continue;
             const parts = line.split(',');
+    
+            // 少なくとも問題(q)と答え(a)があれば実行する
             if (parts.length >= 2) {
                 const q = parts[0].trim().replace(/^"|"$/g, '');
                 const a = parts[1].trim().replace(/^"|"$/g, '');
+                // 3列目があれば取得し、なければ空文字にする
+                const exp = parts[2] ? parts[2].trim().replace(/^"|"$/g, '') : ""; 
+        
                 if (q && a) {
                     const docRef = db.collection("decks").doc(currentDeckName).collection("quizzes").doc();
                     batch.set(docRef, {
-                        question: q, answer: a, score: 0, createdAt: firebase.firestore.FieldValue.serverTimestamp()
+                        question: q, 
+                        answer: a, 
+                        explanation: exp, // ここで保存！
+                        score: 0, 
+                        createdAt: firebase.firestore.FieldValue.serverTimestamp()
                     });
-                    count++;
-                    if (count % 400 === 0) {
-                        await batch.commit();
-                        batch = db.batch();
-                    }
+                    // ... (以下略)
                 }
             }
         }
@@ -973,8 +988,11 @@ async function playNext() {
 
 function speakFeedback(answerText) {
     statusText.innerText = "JUDGING...";
-    logText.innerText = `A: ${answerText}`;
+    // 解説があれば表示に追加
+    const expText = currentQuizzes[currentIndex].explanation || "";
+    logText.innerHTML = `A: ${answerText} ${expText ? `<br><small style="color:var(--primary)">解説: ${expText}</small>` : ''}`;
     
+    // 読み上げは答えのみにする
     const utterFeedback = new SpeechSynthesisUtterance(`正解は、${answerText}、です。`);
     utterFeedback.lang = 'ja-JP';
     
